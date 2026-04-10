@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BQE OAuth Callback</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      margin: 0;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+    .container {
+      text-align: center;
+      padding: 2rem;
+      background: rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(10px);
+      border-radius: 16px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+    }
+    .spinner {
+      width: 50px;
+      height: 50px;
+      border: 4px solid rgba(255, 255, 255, 0.3);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 1rem;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    h1 {
+      margin: 0 0 0.5rem;
+      font-size: 1.5rem;
+    }
+    p {
+      margin: 0;
+      opacity: 0.9;
+    }
+    .error {
+      color: #ff6b6b;
+      background: rgba(255, 107, 107, 0.1);
+      padding: 1rem;
+      border-radius: 8px;
+      margin-top: 1rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="spinner"></div>
+    <h1>Connecting to BQE CORE...</h1>
+    <p id="status">Please wait while we complete the authentication.</p>
+  </div>
+
+  <script>
+    (function() {
+      const statusEl = document.getElementById('status');
+
+      // Log full URL for debugging
+      console.log('OAuth callback URL:', window.location.href);
+      console.log('Search params:', window.location.search);
+
+      try {
+        // Parse URL parameters
+        const params = new URLSearchParams(window.location.search);
+        const code = params.get('code');
+        const error = params.get('error');
+        const errorDescription = params.get('error_description');
+
+        console.log('Code:', code);
+        console.log('Error:', error);
+        console.log('Error Description:', errorDescription);
+
+        if (error) {
+          // OAuth error
+          statusEl.innerHTML = `<div class="error">Authentication failed: ${errorDescription || error}</div>`;
+
+          // Send error to parent window
+          if (window.opener) {
+            window.opener.postMessage({
+              type: 'bqe-oauth-error',
+              error: error,
+              description: errorDescription
+            }, '*');
+          }
+
+          setTimeout(() => window.close(), 3000);
+          return;
+        }
+
+        if (!code) {
+          statusEl.innerHTML = '<div class="error">No authorization code received.</div>';
+          setTimeout(() => window.close(), 3000);
+          return;
+        }
+
+        // Success - send code to parent window
+        if (window.opener) {
+          window.opener.postMessage({
+            type: 'bqe-oauth-callback',
+            code: code
+          }, '*');
+
+          statusEl.textContent = 'Authentication successful! Closing window...';
+          setTimeout(() => window.close(), 1000);
+        } else {
+          statusEl.innerHTML = '<div class="error">Could not communicate with parent window.</div>';
+        }
+      } catch (err) {
+        console.error('OAuth callback error:', err);
+        statusEl.innerHTML = `<div class="error">An error occurred: ${err.message}</div>`;
+      }
+    })();
+  </script>
+</body>
+</html>
