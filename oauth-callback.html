@@ -10,7 +10,7 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      height: 100vh;
+      min-height: 100vh;
       margin: 0;
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       color: white;
@@ -22,6 +22,8 @@
       backdrop-filter: blur(10px);
       border-radius: 16px;
       box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+      max-width: 480px;
+      width: 90%;
     }
     .spinner {
       width: 50px;
@@ -50,39 +52,69 @@
       border-radius: 8px;
       margin-top: 1rem;
     }
+    /* Manual code display — shown when opener is unavailable */
+    .code-block {
+      display: block;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 0.8rem;
+      background: rgba(0, 0, 0, 0.35);
+      padding: 0.9rem 1.1rem;
+      border-radius: 8px;
+      word-break: break-all;
+      margin: 1.2rem 0 0.5rem;
+      cursor: pointer;
+      user-select: all;
+      text-align: left;
+      border: 1px solid rgba(255,255,255,0.2);
+      transition: background 0.15s;
+    }
+    .code-block:hover { background: rgba(0,0,0,0.5); }
+    .copy-btn {
+      background: rgba(255,255,255,0.2);
+      border: 1px solid rgba(255,255,255,0.4);
+      color: white;
+      padding: 0.5rem 1.2rem;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      margin-top: 0.5rem;
+    }
+    .copy-btn:hover { background: rgba(255,255,255,0.35); }
+    .hint {
+      font-size: 0.82rem;
+      opacity: 0.75;
+      margin-top: 1rem !important;
+      line-height: 1.5;
+    }
   </style>
 </head>
 <body>
   <div class="container">
-    <div class="spinner"></div>
-    <h1>Connecting to BQE CORE...</h1>
+    <div class="spinner" id="spinner"></div>
+    <h1 id="title">Connecting to BQE CORE...</h1>
     <p id="status">Please wait while we complete the authentication.</p>
   </div>
 
   <script>
     (function() {
-      const statusEl = document.getElementById('status');
+      const statusEl  = document.getElementById('status');
+      const titleEl   = document.getElementById('title');
+      const spinnerEl = document.getElementById('spinner');
+      const container = document.querySelector('.container');
 
-      // Log full URL for debugging
       console.log('OAuth callback URL:', window.location.href);
-      console.log('Search params:', window.location.search);
 
       try {
-        // Parse URL parameters
-        const params = new URLSearchParams(window.location.search);
-        const code = params.get('code');
-        const error = params.get('error');
+        const params           = new URLSearchParams(window.location.search);
+        const code             = params.get('code');
+        const error            = params.get('error');
         const errorDescription = params.get('error_description');
 
-        console.log('Code:', code);
-        console.log('Error:', error);
-        console.log('Error Description:', errorDescription);
-
+        // ── Error from BQE ─────────────────────────────────────
         if (error) {
-          // OAuth error
-          statusEl.innerHTML = `<div class="error">Authentication failed: ${errorDescription || error}</div>`;
+          spinnerEl.style.display = 'none';
+          statusEl.innerHTML = '<div class="error">Authentication failed: ' + (errorDescription || error) + '</div>';
 
-          // Send error to parent window
           if (window.opener) {
             window.opener.postMessage({
               type: 'bqe-oauth-error',
@@ -90,32 +122,68 @@
               description: errorDescription
             }, '*');
           }
-
           setTimeout(() => window.close(), 3000);
           return;
         }
 
+        // ── No code received ───────────────────────────────────
         if (!code) {
+          spinnerEl.style.display = 'none';
           statusEl.innerHTML = '<div class="error">No authorization code received.</div>';
           setTimeout(() => window.close(), 3000);
           return;
         }
 
-        // Success - send code to parent window
+        // ── Success ────────────────────────────────────────────
         if (window.opener) {
-          window.opener.postMessage({
-            type: 'bqe-oauth-callback',
-            code: code
-          }, '*');
-
-          statusEl.textContent = 'Authentication successful! Closing window...';
+          // Automatic path: plugin iframe is the opener — send code via postMessage
+          window.opener.postMessage({ type: 'bqe-oauth-callback', code: code }, '*');
+          spinnerEl.style.display = 'none';
+          titleEl.textContent = 'Connected!';
+          statusEl.textContent = 'Authentication successful. Closing window…';
           setTimeout(() => window.close(), 1000);
         } else {
-          statusEl.innerHTML = '<div class="error">Could not communicate with parent window.</div>';
+          // Manual path: opened in system browser — display the code for copy-paste
+          spinnerEl.style.display = 'none';
+          titleEl.textContent = 'One more step';
+          statusEl.textContent = 'Copy the code below and paste it into LogSeq:';
+
+          var pre = document.createElement('pre');
+          pre.className = 'code-block';
+          pre.title = 'Click to select';
+          pre.textContent = code;
+          pre.addEventListener('click', function() { selectAll(pre); });
+          container.appendChild(pre);
+
+          var copyBtn = document.createElement('button');
+          copyBtn.className = 'copy-btn';
+          copyBtn.textContent = 'Copy to clipboard';
+          copyBtn.addEventListener('click', function() {
+            navigator.clipboard.writeText(code).then(function() {
+              copyBtn.textContent = '✓ Copied!';
+              setTimeout(function() { copyBtn.textContent = 'Copy to clipboard'; }, 2000);
+            }).catch(function() {
+              selectAll(pre);
+            });
+          });
+          container.appendChild(copyBtn);
+
+          var hint = document.createElement('p');
+          hint.className = 'hint';
+          hint.textContent = 'Paste this code into the "Authorization code" field in the LogSeq BQE plugin, then click Submit.';
+          container.appendChild(hint);
         }
       } catch (err) {
         console.error('OAuth callback error:', err);
-        statusEl.innerHTML = `<div class="error">An error occurred: ${err.message}</div>`;
+        statusEl.innerHTML = '<div class="error">An error occurred: ' + err.message + '</div>';
+      }
+
+      function selectAll(el) {
+        var range = document.createRange();
+        range.selectNodeContents(el);
+        var sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
       }
     })();
   </script>
